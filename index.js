@@ -13,6 +13,7 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
   "utf8"
 );
+
 // ✅ Firebase Admin Initialization
 const serviceAccount = JSON.parse(decoded);
 
@@ -54,6 +55,62 @@ async function run() {
     const submittedAssignments = db.collection("submittedAssignments");
     const usersCollection = db.collection("usersCollection");
 
+    app.get("/all-users", async (req, res) => {
+      try {
+        const { search } = req.query;
+
+        const query = {};
+        if (search) {
+          query.name = { $regex: search, $options: "i" };
+        }
+
+        const users = await usersCollection.find(query).toArray();
+
+        res.json(users);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+
+        res.status(500).json({ message: "Server error while fetching users." });
+      }
+    });
+    app.get("/leaderboard", async (req, res) => {
+      try {
+        const leaderboardAgg = await submittedAssignments
+          .aggregate([
+            { $match: { status: "completed" } },
+            {
+              $group: {
+                _id: "$userEmail",
+                averageMark: { $avg: { $toDouble: "$receivedMark" } },
+              },
+            },
+            { $sort: { averageMark: -1 } },
+            { $limit: 20 },
+          ])
+          .toArray();
+
+        const leaderboard = await Promise.all(
+          leaderboardAgg.map(async ({ _id: email, averageMark }) => {
+            const user = await usersCollection.findOne(
+              { email },
+              { projection: { name: 1, photo: 1 } }
+            );
+
+            return {
+              email,
+              name: user?.name,
+              photo: user?.photo,
+              averageMark: Number(averageMark.toFixed(2)),
+            };
+          })
+        );
+
+        res.send(leaderboard);
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Internal server error" });
+      }
+    });
     app.get("/my-progress", verifyFirebaseToken, async (req, res) => {
       const email = req.user.email;
 
@@ -138,7 +195,7 @@ async function run() {
     });
     ////////////////////////////// all post/////////////////////////
     app.post("/users", async (req, res) => {
-      const { email } = req.body;
+      const { email, displayName, photoURL } = req.body;
 
       const existing = await usersCollection.findOne({ email });
       if (existing) {
@@ -147,7 +204,8 @@ async function run() {
 
       const result = await usersCollection.insertOne({
         email,
-
+        name: displayName,
+        photo: photoURL,
         progress: { created: 0, submitted: 0, marked: 0 },
       });
 
@@ -237,13 +295,8 @@ async function run() {
     });
 
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
 
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // Send a ping to confirm a successful connection
   } finally {
     // Ensures that the client will close when you finish/error
   }
