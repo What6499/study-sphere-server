@@ -260,11 +260,24 @@ async function run() {
               status: "completed",
               receivedMark,
               feedback,
+
               markedAt: new Date(),
             },
           }
         );
 
+        if (result.modifiedCount > 0) {
+          const updatedAssignment = await submittedAssignments.findOne({
+            _id: new ObjectId(id),
+          });
+
+          const email = updatedAssignment.userEmail;
+
+          await usersCollection.updateOne(
+            { userEmail: email },
+            { $inc: { "progress.marked": 1 } }
+          );
+        }
         res.send({ result });
       } catch (err) {
         console.error(err);
