@@ -248,7 +248,8 @@ async function run() {
     });
 
     ////////////put put//////////////
-    app.put("/submissions/:id", async (req, res) => {
+    app.put("/submissions/:id", verifyFirebaseToken, async (req, res) => {
+      const user = req.user;
       const { id } = req.params;
       const { receivedMark, feedback } = req.body;
 
@@ -267,14 +268,8 @@ async function run() {
         );
 
         if (result.modifiedCount > 0) {
-          const updatedAssignment = await submittedAssignments.findOne({
-            _id: new ObjectId(id),
-          });
-
-          const email = updatedAssignment.userEmail;
-
           await usersCollection.updateOne(
-            { userEmail: email },
+            { email: user.email },
             { $inc: { "progress.marked": 1 } }
           );
         }
