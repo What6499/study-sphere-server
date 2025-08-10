@@ -1,0 +1,5 @@
+node_modules
+.env
+.vercel
+admin-key.json
+config
